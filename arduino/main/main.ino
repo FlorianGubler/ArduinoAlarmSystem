@@ -1,17 +1,3 @@
-//RFID
-#include <MFRC522.h>
-
-#define PIN_RESET  6 // SPI Reset Pin
-#define PIN_SS    7 // SPI Slave Select Pin
-
-MFRC522 mfrc522(PIN_SS, PIN_RESET);
-
-//Servo
-#include <Servo.h>
-Servo servo;  // create servo object to control a servo
-int pos = 0; 
-int opendeg = 90;
-
 //Display
 #include <Wire.h>
 #include "rgb_lcd.h"
@@ -72,37 +58,16 @@ void setup()
       // wait 10 seconds for connection:
       delay(10000);
     }
-  
     Serial.println("Connected to wifi");
-
-    //Servo
-    servo.attach(7); 
-    Serial.println("Attached Servo");
 
     //Display
     lcd.begin(16, 2);
     lcd.setRGB(color_defaultR, color_defaultG, color_defaultB);
     printToDisplay("READY", 1, true);
-
-    //Init RFID
-    Serial.begin(9600);
-    SPI.begin();
-    Serial.println("Init RFID");
-    mfrc522.PCD_Init();
-    Serial.println("RFID ready");
 }
 
 void loop()
 {
-    if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
-        String rfidUID = "";
-        for (byte i = 0; i < mfrc522.uid.size; i++) {
-            rfidUID += mfrc522.uid.uidByte[i];
-        }
-        verifyRFIDCard(rfidUID);
-        mfrc522.PICC_HaltA();
-        delay(1000);
-   }
    if(client.available()){
         String res = "";
         while (client.available()) {          // loop while the client's available
@@ -111,28 +76,6 @@ void loop()
         }
         String firstline = res.substring(0, res.indexOf('\n'));
         String ResponseCode = firstline.substring(res.indexOf(' ') + 1, firstline.length() - 2); // RM Line Space
-        
-        if(ResponseCode.equals("200")){
-            Serial.println("CARD VALID");
-            lcd.setRGB(color_validR, color_validG, color_validB);
-            printToDisplay("ACCESS GRANTED", 1, true);
-            delay(1000);
-            OpenWithServo();
-        } else if(ResponseCode.equals("401")){
-            Serial.println("CARD INVALID");
-            lcd.setRGB(color_errorR, color_errorG, color_errorB);
-            printToDisplay("ACCESS DENIED", 1, true);
-            delay(2000);
-            lcd.setRGB(color_defaultR, color_defaultG, color_defaultB);
-            printToDisplay("READY", 1, true);
-        } else{
-            Serial.println("UNKOWN RESPONSE");
-            lcd.setRGB(color_warnR, color_warnG, color_warnB);
-            printToDisplay("INTERNAL ERROR", 1, true);
-            printToDisplay("WAITING...", 1, false);
-            lcd.setCursor(0, 0);
-        }
-        Serial.println("");
    }
 }
 
@@ -141,22 +84,18 @@ void verifyRFIDCard(String rfid_UID){
     printToDisplay("WAITING...", 1, true);
     Serial.println("Verifying RFID Card " + rfid_UID);
     // if you get a connection, report back via serial:
-    if (client.connect(server, port)) {
-      client.println("GET /api/members/verify/" + rfid_UID + " HTTP/1.1");
+    
+}
+
+void http(String method, String path, char[] server, int port){
+  if (client.connect(server, port)) {
+      client.println(method + " " + path + " HTTP/1.1");
       client.println("Host: " + String(server));
       client.println("Connection: close");
       client.println();
     } else{
       Serial.println("Couldn't connect to server: " + String(server) + ":" + port);
     }
-}
-
-void OpenWithServo(){
-  for (pos = 0; pos <= opendeg; pos += 1) {
-    // in steps of 1 degree
-    servo.write(pos);              // tell servo to go to position in variable 'pos'
-    delay(15);                       // waits 15 ms for the servo to reach the position
-  }
 }
 
 void printToDisplay(String inp, int line, boolean clear){
