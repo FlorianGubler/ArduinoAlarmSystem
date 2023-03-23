@@ -1,0 +1,33 @@
+./AlarmAPI/HELP.md
+./AlarmAPI/target/
+!./AlarmAPI/.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+./AlarmAPI/.apt_generated
+./AlarmAPI/.classpath
+./AlarmAPI/.factorypath
+./AlarmAPI/.project
+./AlarmAPI/.settings
+./AlarmAPI/.springBeans
+./AlarmAPI/.sts4-cache
+
+### IntelliJ IDEA ###
+./AlarmAPI/.idea
+./AlarmAPI/*.iws
+./AlarmAPI/*.iml
+./AlarmAPI/*.ipr
+
+### NetBeans ###
+./AlarmAPI//nbproject/private/
+./AlarmAPI//nbbuild/
+./AlarmAPI//dist/
+./AlarmAPI//nbdist/
+./AlarmAPI//.nb-gradle/
+./AlarmAPI/build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+./AlarmAPI/.vscode/
