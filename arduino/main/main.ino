@@ -4,9 +4,9 @@
 
 rgb_lcd lcd;
 
-const int color_offR = 0;
-const int color_offG = 0;
-const int color_offB = 0;
+const int color_offR = 255;
+const int color_offG = 255;
+const int color_offB = 255;
 
 const int color_defaultR = 0;
 const int color_defaultG = 0;
@@ -30,7 +30,7 @@ int lcdLightPort = 1;
 //Wifi
 #include <WiFiNINA.h>
 
-#define SECRET_SSID "iPhone (2)"
+#define SECRET_SSID "iPhone"
 #define SECRET_PASS "123456789"
 
 char ssid[] = SECRET_SSID;        // your network SSID (name)
@@ -42,15 +42,22 @@ char server[] = "172.20.10.4";    // IP Adress of API Host
 int port = 8080;          //Port of API
 WiFiClient client;
 
+//Alarm sensors
+int alarmSensors[] = {2};
+
 //Alarm Button
 int alarmButtonPort = 0;
+byte entprellzeit = 200;                      // Entprellzeit des Tasters. ACHTUNG BYTE nur bis 255 ms !!!
+unsigned long alarmButtonClickedLast = 0;     // Variable für den Timer des Tasters zum entprellen
 
 //Alarm State
 boolean alarmState = false;
+boolean alarmActive = false;
+int alarmBlinkCount = 20;
 
 void setup()
 {  
-    //Setup Dispplay
+    //Setup Display
     lcd.begin(16, 2);
     lcd.setRGB(color_offR, color_offG, color_offB);
     printToDisplay("SETUP...", 1, true);
@@ -98,6 +105,7 @@ void loop() {
     String firstline = res.substring(0, res.indexOf('\n'));
     String ResponseCode = firstline.substring(res.indexOf(' ') + 1, firstline.length() - 2); // RM Line Space
   }
+  checkAlarmSensors();
 }
 
 //Util Methods
@@ -137,6 +145,12 @@ void turnLCDLight(boolean on){
 
 //Functionality
 void switchAlarmState(){
+  //If current time is later than last time clicked plus entprellzeit
+  if ((millis() - alarmButtonClickedLast) <= entprellzeit){
+    return;
+  }
+  //Set alarmButtonClickedLast
+  alarmButtonClickedLast = millis();
   //Update state
   alarmState = !alarmState;
   //Activate LCD light
@@ -150,11 +164,43 @@ void switchAlarmState(){
     lcd.setRGB(color_greenR, color_greenG, color_greenB);
   }
   //Log and print to display
-  Serial.print("Alarm is now " + stateStr);
+  Serial.println("Alarm is now " + stateStr);
   stateStr.toUpperCase();
   printToDisplay(stateStr, 1, true);
   //Send Alarm State to API
 
-  //Interrupt button delay
-  delay(20);
+}
+
+void checkAlarmSensors(){
+  //Alarm activated and alarm not currently active
+  if(!alarmState || alarmActive){
+    return;
+  }
+  //Check sensors
+  for (int sensor : alarmSensors) { // for each sensor
+    if(digitalRead(sensor) == HIGH){
+      alarm(sensor);
+    }
+  }
+}
+
+void alarm(int sensor){
+  //Set alarm active state
+  alarmActive = true;
+  //Log
+  Serial.println("Alarm on sensor " + sensor);
+  //Print to display
+  lcd.setRGB(color_redR, color_redG, color_redB);
+  printToDisplay("ALARM ON SENSOR " + String(sensor), 1, true);
+  //LED Blink
+  for(int i = 0; i < alarmBlinkCount; i++){
+    digitalWrite(lcdLightPort, HIGH);  // turn the LED on (HIGH is the voltage level)
+    delay(100);                       // wait for a second
+    digitalWrite(lcdLightPort, LOW);   // turn the LED off by making the voltage LOW
+    delay(100);                       // wait for a second
+  }
+  //Turn of alarm Active state
+  alarmActive = false;
+  //Disable alarm
+  switchAlarmState();
 }
