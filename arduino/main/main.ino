@@ -43,7 +43,7 @@ int port = 8080;          //Port of API
 WiFiClient client;
 
 //Alarm sensors
-int alarmSensors[] = {2};
+int alarmSensors[] = {4, 5, 6};
 
 //Alarm Button
 int alarmButtonPort = 0;
@@ -53,6 +53,7 @@ unsigned long alarmButtonClickedLast = 0;     // Variable für den Timer des Tas
 //Alarm State
 boolean alarmState = false;
 boolean alarmActive = false;
+int alarmActiveSensor = -1;
 int alarmBlinkCount = 20;
 
 void setup()
@@ -69,7 +70,10 @@ void setup()
     pinMode(alarmButtonPort, INPUT);
 
     //Attach Interrupt to alarm button
-    attachInterrupt(digitalPinToInterrupt(alarmButtonPort), switchAlarmState, FALLING);
+    attachInterrupt(digitalPinToInterrupt(alarmButtonPort), switchAlarmState, RISING);
+
+    //Attach Interrupt for alarm sensors
+    handleSensorInterrupts(true);
     
     // check for the WiFi module:
     if (WiFi.status() == WL_NO_MODULE) {
@@ -97,6 +101,7 @@ void setup()
     //Display
     lcd.setRGB(color_defaultR, color_defaultG, color_defaultB);
     printToDisplay("READY", 1, true);
+    printToDisplay("- ALARM INACTIVE", 2, false);
 }
 
 void loop() {
@@ -105,7 +110,10 @@ void loop() {
     String firstline = res.substring(0, res.indexOf('\n'));
     String ResponseCode = firstline.substring(res.indexOf(' ') + 1, firstline.length() - 2); // RM Line Space
   }
-  checkAlarmSensors();
+  //If alarm active show alarm content
+  if(alarmActive){
+    showAlarm();
+  }
 }
 
 //Util Methods
@@ -157,10 +165,10 @@ void switchAlarmState(){
   turnLCDLight(alarmState);
   String stateStr = "";
   if(alarmState){
-    stateStr = "activated";
+    stateStr = "active";
     lcd.setRGB(color_yellowR, color_yellowG, color_yellowB);
   } else{
-    stateStr = "deactivated";
+    stateStr = "inactive";
     lcd.setRGB(color_greenR, color_greenG, color_greenB);
   }
   //Log and print to display
@@ -171,36 +179,67 @@ void switchAlarmState(){
 
 }
 
-void checkAlarmSensors(){
-  //Alarm activated and alarm not currently active
-  if(!alarmState || alarmActive){
-    return;
-  }
-  //Check sensors
-  for (int sensor : alarmSensors) { // for each sensor
-    if(digitalRead(sensor) == HIGH){
-      alarm(sensor);
-    }
+void handleSensorInterrupts(boolean active){
+  if(active == true){
+    attachInterrupt(digitalPinToInterrupt(alarmSensors[0]), alarmSensor1, RISING);
+    attachInterrupt(digitalPinToInterrupt(alarmSensors[1]), alarmSensor2, RISING);
+    attachInterrupt(digitalPinToInterrupt(alarmSensors[2]), alarmSensor3, RISING);
+  } else{
+    detachInterrupt(digitalPinToInterrupt(alarmSensors[0]));
+    detachInterrupt(digitalPinToInterrupt(alarmSensors[1]));
+    detachInterrupt(digitalPinToInterrupt(alarmSensors[2]));
   }
 }
 
+void alarmSensor1(){
+    alarm(alarmSensors[0]);
+}
+
+void alarmSensor2(){
+    alarm(alarmSensors[1]);
+}
+
+void alarmSensor3(){
+  alarm(alarmSensors[2]);
+}
+
 void alarm(int sensor){
+  //Alarm activated and alarm is not currently de
+  if(alarmState == false || alarmActive == true){
+    return;
+  }
+  //Detach sensor interrupts
+  handleSensorInterrupts(false);
   //Set alarm active state
   alarmActive = true;
+  //Set alarm active sensor
+  alarmActiveSensor = sensor;
+}
+
+void showAlarm(){
+  //If alarmActiveSensor is -1 return
+  if(alarmActiveSensor == -1){
+    return;
+  }
   //Log
-  Serial.println("Alarm on sensor " + sensor);
+  Serial.println("Alarm on sensor (Port " + String(alarmActiveSensor) + ")");
   //Print to display
   lcd.setRGB(color_redR, color_redG, color_redB);
-  printToDisplay("ALARM ON SENSOR " + String(sensor), 1, true);
+  printToDisplay("ALARM REGISTERED", 1, true);
+  printToDisplay("PORT " + String(alarmActiveSensor), 2, false);
   //LED Blink
   for(int i = 0; i < alarmBlinkCount; i++){
     digitalWrite(lcdLightPort, HIGH);  // turn the LED on (HIGH is the voltage level)
-    delay(100);                       // wait for a second
+    delay(100);                        // wait for half a second
     digitalWrite(lcdLightPort, LOW);   // turn the LED off by making the voltage LOW
-    delay(100);                       // wait for a second
+    delay(100);                        // wait for half a second
   }
   //Turn of alarm Active state
   alarmActive = false;
+  //Reset alarm active sensor
+  alarmActiveSensor = -1;
   //Disable alarm
   switchAlarmState();
+  //Re-attach sensor interrupts
+  handleSensorInterrupts(true);
 }
