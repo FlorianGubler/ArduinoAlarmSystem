@@ -1,38 +1,31 @@
-//RFID
-#include <MFRC522.h>
-
-#define PIN_RESET  6 // SPI Reset Pin
-#define PIN_SS    7 // SPI Slave Select Pin
-
-MFRC522 mfrc522(PIN_SS, PIN_RESET);
-
-//Servo
-#include <Servo.h>
-Servo servo;  // create servo object to control a servo
-int pos = 0; 
-int opendeg = 90;
-
 //Display
 #include <Wire.h>
 #include "rgb_lcd.h"
 
 rgb_lcd lcd;
 
+const int color_offR = 255;
+const int color_offG = 255;
+const int color_offB = 255;
+
 const int color_defaultR = 0;
 const int color_defaultG = 0;
 const int color_defaultB = 255;
 
-const int color_errorR = 255;
-const int color_errorG = 0;
-const int color_errorB = 0;
+const int color_redR = 255;
+const int color_redG = 0;
+const int color_redB = 0;
 
-const int color_warnR = 255;
-const int color_warnG = 165;
-const int color_warnB = 0;
+const int color_yellowR = 255;
+const int color_yellowG = 165;
+const int color_yellowB = 0;
 
-const int color_validR = 0;
-const int color_validG = 255;
-const int color_validB = 0;
+const int color_greenR = 0;
+const int color_greenG = 255;
+const int color_greenB = 0;
+
+//LCD Light
+int lcdLightPort = 1;
 
 //Wifi
 #include <WiFiNINA.h>
@@ -49,8 +42,39 @@ char server[] = "172.20.10.4";    // IP Adress of API Host
 int port = 8080;          //Port of API
 WiFiClient client;
 
+//Alarm sensors
+int alarmSensors[] = {4, 5, 6};
+
+//Alarm Button
+int alarmButtonPort = 0;
+byte entprellzeit = 200;                      // Entprellzeit des Tasters. ACHTUNG BYTE nur bis 255 ms !!!
+unsigned long alarmButtonClickedLast = 0;     // Variable für den Timer des Tasters zum entprellen
+
+//Alarm State
+boolean alarmState = false;
+boolean alarmActive = false;
+int alarmActiveSensor = -1;
+int alarmBlinkCount = 20;
+
 void setup()
 {  
+    //Setup Display
+    lcd.begin(16, 2);
+    lcd.setRGB(color_offR, color_offG, color_offB);
+    printToDisplay("SETUP...", 1, true);
+        
+    //Set LcdLight Mode
+    pinMode(lcdLightPort, OUTPUT);
+
+    //Set Alarm Button Mode
+    pinMode(alarmButtonPort, INPUT);
+
+    //Attach Interrupt to alarm button
+    attachInterrupt(digitalPinToInterrupt(alarmButtonPort), switchAlarmState, RISING);
+
+    //Attach Interrupt for alarm sensors
+    handleSensorInterrupts(true);
+    
     // check for the WiFi module:
     if (WiFi.status() == WL_NO_MODULE) {
       Serial.println("Communication with WiFi module failed!");
@@ -72,77 +96,30 @@ void setup()
       // wait 10 seconds for connection:
       delay(10000);
     }
-  
     Serial.println("Connected to wifi");
 
-    //Servo
-    servo.attach(7); 
-    Serial.println("Attached Servo");
-
     //Display
-    lcd.begin(16, 2);
     lcd.setRGB(color_defaultR, color_defaultG, color_defaultB);
     printToDisplay("READY", 1, true);
-
-    //Init RFID
-    Serial.begin(9600);
-    SPI.begin();
-    Serial.println("Init RFID");
-    mfrc522.PCD_Init();
-    Serial.println("RFID ready");
+    printToDisplay("- ALARM INACTIVE", 2, false);
 }
 
-void loop()
-{
-    if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
-        String rfidUID = "";
-        for (byte i = 0; i < mfrc522.uid.size; i++) {
-            rfidUID += mfrc522.uid.uidByte[i];
-        }
-        verifyRFIDCard(rfidUID);
-        mfrc522.PICC_HaltA();
-        delay(1000);
-   }
-   if(client.available()){
-        String res = "";
-        while (client.available()) {          // loop while the client's available
-          char c = client.read();
-          res += c;
-        }
-        String firstline = res.substring(0, res.indexOf('\n'));
-        String ResponseCode = firstline.substring(res.indexOf(' ') + 1, firstline.length() - 2); // RM Line Space
-        
-        if(ResponseCode.equals("200")){
-            Serial.println("CARD VALID");
-            lcd.setRGB(color_validR, color_validG, color_validB);
-            printToDisplay("ACCESS GRANTED", 1, true);
-            delay(1000);
-            OpenWithServo();
-        } else if(ResponseCode.equals("401")){
-            Serial.println("CARD INVALID");
-            lcd.setRGB(color_errorR, color_errorG, color_errorB);
-            printToDisplay("ACCESS DENIED", 1, true);
-            delay(2000);
-            lcd.setRGB(color_defaultR, color_defaultG, color_defaultB);
-            printToDisplay("READY", 1, true);
-        } else{
-            Serial.println("UNKOWN RESPONSE");
-            lcd.setRGB(color_warnR, color_warnG, color_warnB);
-            printToDisplay("INTERNAL ERROR", 1, true);
-            printToDisplay("WAITING...", 1, false);
-            lcd.setCursor(0, 0);
-        }
-        Serial.println("");
-   }
+void loop() {
+  String res = receiveHttp();
+  if(res != ""){
+    String firstline = res.substring(0, res.indexOf('\n'));
+    String ResponseCode = firstline.substring(res.indexOf(' ') + 1, firstline.length() - 2); // RM Line Space
+  }
+  //If alarm active show alarm content
+  if(alarmActive){
+    showAlarm();
+  }
 }
 
-void verifyRFIDCard(String rfid_UID){
-    lcd.setRGB(color_defaultR, color_defaultG, color_defaultB);
-    printToDisplay("WAITING...", 1, true);
-    Serial.println("Verifying RFID Card " + rfid_UID);
-    // if you get a connection, report back via serial:
-    if (client.connect(server, port)) {
-      client.println("GET /api/members/verify/" + rfid_UID + " HTTP/1.1");
+//Util Methods
+void http(String method, String path, char server, int port){
+  if (client.connect(server, port)) {
+      client.println(method + " " + path + " HTTP/1.1");
       client.println("Host: " + String(server));
       client.println("Connection: close");
       client.println();
@@ -151,12 +128,15 @@ void verifyRFIDCard(String rfid_UID){
     }
 }
 
-void OpenWithServo(){
-  for (pos = 0; pos <= opendeg; pos += 1) {
-    // in steps of 1 degree
-    servo.write(pos);              // tell servo to go to position in variable 'pos'
-    delay(15);                       // waits 15 ms for the servo to reach the position
-  }
+String receiveHttp(){
+  String res = "";
+  if(client.available()){
+        while (client.available()) {          // loop while the client's available
+          char c = client.read();
+          res += c;
+        }
+   }
+   return res;
 }
 
 void printToDisplay(String inp, int line, boolean clear){
@@ -165,4 +145,101 @@ void printToDisplay(String inp, int line, boolean clear){
   }
   lcd.print(inp);
   lcd.setCursor(0, line);
+}
+
+void turnLCDLight(boolean on){
+  digitalWrite(lcdLightPort, on);
+}
+
+//Functionality
+void switchAlarmState(){
+  //If current time is later than last time clicked plus entprellzeit
+  if ((millis() - alarmButtonClickedLast) <= entprellzeit){
+    return;
+  }
+  //Set alarmButtonClickedLast
+  alarmButtonClickedLast = millis();
+  //Update state
+  alarmState = !alarmState;
+  //Activate LCD light
+  turnLCDLight(alarmState);
+  String stateStr = "";
+  if(alarmState){
+    stateStr = "active";
+    lcd.setRGB(color_yellowR, color_yellowG, color_yellowB);
+  } else{
+    stateStr = "inactive";
+    lcd.setRGB(color_greenR, color_greenG, color_greenB);
+  }
+  //Log and print to display
+  Serial.println("Alarm is now " + stateStr);
+  stateStr.toUpperCase();
+  printToDisplay(stateStr, 1, true);
+  //Send Alarm State to API
+
+}
+
+void handleSensorInterrupts(boolean active){
+  if(active == true){
+    attachInterrupt(digitalPinToInterrupt(alarmSensors[0]), alarmSensor1, RISING);
+    attachInterrupt(digitalPinToInterrupt(alarmSensors[1]), alarmSensor2, RISING);
+    attachInterrupt(digitalPinToInterrupt(alarmSensors[2]), alarmSensor3, RISING);
+  } else{
+    detachInterrupt(digitalPinToInterrupt(alarmSensors[0]));
+    detachInterrupt(digitalPinToInterrupt(alarmSensors[1]));
+    detachInterrupt(digitalPinToInterrupt(alarmSensors[2]));
+  }
+}
+
+void alarmSensor1(){
+    alarm(alarmSensors[0]);
+}
+
+void alarmSensor2(){
+    alarm(alarmSensors[1]);
+}
+
+void alarmSensor3(){
+  alarm(alarmSensors[2]);
+}
+
+void alarm(int sensor){
+  //Alarm activated and alarm is not currently de
+  if(alarmState == false || alarmActive == true){
+    return;
+  }
+  //Detach sensor interrupts
+  handleSensorInterrupts(false);
+  //Set alarm active state
+  alarmActive = true;
+  //Set alarm active sensor
+  alarmActiveSensor = sensor;
+}
+
+void showAlarm(){
+  //If alarmActiveSensor is -1 return
+  if(alarmActiveSensor == -1){
+    return;
+  }
+  //Log
+  Serial.println("Alarm on sensor (Port " + String(alarmActiveSensor) + ")");
+  //Print to display
+  lcd.setRGB(color_redR, color_redG, color_redB);
+  printToDisplay("ALARM REGISTERED", 1, true);
+  printToDisplay("PORT " + String(alarmActiveSensor), 2, false);
+  //LED Blink
+  for(int i = 0; i < alarmBlinkCount; i++){
+    digitalWrite(lcdLightPort, HIGH);  // turn the LED on (HIGH is the voltage level)
+    delay(100);                        // wait for half a second
+    digitalWrite(lcdLightPort, LOW);   // turn the LED off by making the voltage LOW
+    delay(100);                        // wait for half a second
+  }
+  //Turn of alarm Active state
+  alarmActive = false;
+  //Reset alarm active sensor
+  alarmActiveSensor = -1;
+  //Disable alarm
+  switchAlarmState();
+  //Re-attach sensor interrupts
+  handleSensorInterrupts(true);
 }

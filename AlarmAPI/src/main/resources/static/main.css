@@ -1,0 +1,31 @@
+body, #alarmHistory tr, #alarmHistory tr{
+    background-color: #1b1d21;
+    color: white;
+}
+.alarm-container{
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.alarm-container p{
+    color: red;
+    font-weight: bold;
+    font-size: xxx-large;
+    animation-name: alarm;
+    animation-duration: 500ms;
+    animation-iteration-count: infinite;
+}
+
+@keyframes alarm{
+    0%{
+        opacity: 1;
+    }
+    50%{
+        opacity: 0;
+    }
+    100%{
+        opacity: 1;
+    }
+}
