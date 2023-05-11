@@ -39,7 +39,7 @@ int keyIndex = 0;            // your network key Index number (needed only for W
 
 int status = WL_IDLE_STATUS;
 char server[] = "172.20.10.4";    // IP Adress of API Host
-int port = 8080;          //Port of API
+int port = 8080;                  //Port of API
 WiFiClient client;
 
 //Alarm sensors
@@ -105,10 +105,15 @@ void setup()
 }
 
 void loop() {
+  //Receive HTTP and parse response
   String res = receiveHttp();
   if(res != ""){
     String firstline = res.substring(0, res.indexOf('\n'));
     String ResponseCode = firstline.substring(res.indexOf(' ') + 1, firstline.length() - 2); // RM Line Space
+    if(ResponseCode != "200"){
+      Serial.println("Error in HTTP Request: ");
+      Serial.println(res);
+    }
   }
   //If alarm active show alarm content
   if(alarmActive){
@@ -117,9 +122,10 @@ void loop() {
 }
 
 //Util Methods
-void http(String method, String path, char server, int port){
+void callAlarmAPI(){
   if (client.connect(server, port)) {
-      client.println(method + " " + path + " HTTP/1.1");
+      Serial.println("Call API: POST /api/alarm/" + String(alarmActiveSensor) + " HTTP/1.1");
+      client.println("POST /api/alarm/" + String(alarmActiveSensor) + " HTTP/1.1");
       client.println("Host: " + String(server));
       client.println("Connection: close");
       client.println();
@@ -227,6 +233,8 @@ void showAlarm(){
   lcd.setRGB(color_redR, color_redG, color_redB);
   printToDisplay("ALARM REGISTERED", 1, true);
   printToDisplay("PORT " + String(alarmActiveSensor), 2, false);
+  //Push alarm to API
+  callAlarmAPI();
   //LED Blink
   for(int i = 0; i < alarmBlinkCount; i++){
     digitalWrite(lcdLightPort, HIGH);  // turn the LED on (HIGH is the voltage level)
