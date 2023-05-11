@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/AlarmAPI.iml" filepath="$PROJECT_DIR$/AlarmAPI.iml" />
+      <module fileurl="file://$PROJECT_DIR$/alarmapi.iml" filepath="$PROJECT_DIR$/alarmapi.iml" />
     </modules>
   </component>
 </project>
